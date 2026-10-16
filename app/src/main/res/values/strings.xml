@@ -85,4 +85,9 @@
     <string name="reply_invalid">Der Lesedienst hat keine lesbare Antwort geliefert. Bitte versuchen Sie es erneut.</string>
     <string name="voice_missing">Keine deutsche Offline-Stimme verfügbar. Bitte installieren Sie eine deutsche Stimme in den Spracheinstellungen und prüfen Sie die Stimme danach erneut.</string>
     <string name="speech_failed">Die Sprachausgabe ist fehlgeschlagen. Bitte prüfen Sie die deutsche Offline-Stimme in den Spracheinstellungen.</string>
+    <string name="camera_back">Rückseite</string>
+    <string name="camera_front">Vorderseite</string>
+    <string name="camera_other">Weitere Kamera</string>
+    <string name="camera_status">Kamera %1$d von %2$d · %3$s</string>
+    <string name="camera_no_frames">Die Kamera liefert noch kein Bild. Bitte wechseln Sie die Kamera oder prüfen Sie die Kamera-Verbindung.</string>
 </resources>

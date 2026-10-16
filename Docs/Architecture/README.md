@@ -98,6 +98,12 @@ Am 16.10.2026 erfolgreich ausgeführt:
 
 Verwendet wurden Android Studios Java-Laufzeit, das lokale Android SDK und der Emulator `Medium_Phone_API_37.0`. Der erste Gerätetestlauf blieb bei einer Aufnahme über die virtuelle Kamera ohne Bildrückgabe. Nach einem Neustart mit `-camera-back emulated -camera-front emulated` bestand die gesamte Suite. Der produktive API-Dienst wurde dabei nicht aufgerufen.
 
+## Ergänzung: Kameraauswahl und Tests am Mac
+
+Die Kameraauswahl berücksichtigt jetzt alle von CameraX gemeldeten Kameras und zeigt die aktuelle Position in der Liste an. Aufnahmebereitschaft folgt einem laufenden Vorschaustream, während ein Kamerawechsel schon nach dem Binden möglich ist. Der neue Gerätetest prüft Kamerawechsel, Activity-Neuerstellung und anschließende Aufnahme. Die erneute Prüfung besteht aus 36 JVM-Tests und 10 Gerätetests auf einem separaten Emulatorprofil mit zwei emulierten Kameras; beide APKs sind gebaut und Lint meldet keine Fehler.
+
+Die lokale Durchreichung von MacBook-Kamera und RealSense sowie die noch offene Bestätigung physischer Livebilder sind im [Kameratest](kameratest.md) dokumentiert.
+
 ## Zugehörige Entscheidungen
 
 - [ADR 0001: Eine aktuelle Lesesitzung lokal speichern](../ADR/0001-aktuelle-lesesitzung.md)

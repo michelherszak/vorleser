@@ -27,6 +27,10 @@ Der aktuelle Brief und ein noch nicht erfolgreich eingelesenes Foto werden im pr
 
 Die App wird durch diese Änderungen nicht veröffentlicht. Für eine spätere öffentliche Verteilung wären ein authentifizierter Backend-Proxy statt eines gemeinsamen App-Schlüssels, eine bewusste Kostenbegrenzung und ein passender Datenschutzhinweis nötig.
 
+## Kameras am Entwicklungs-Mac testen
+
+Die App zeigt die aktive Android-Kamera an und kann zwischen allen von CameraX angebotenen Kameras wechseln. Eine Aufnahme ist möglich, sobald die Vorschau Bilder liefert. Die Zuordnung von Laptopkamera und RealSense zum Android-Emulator wird auf dem Mac eingerichtet; sie ist nicht Bestandteil der APK. Einrichtung und aktueller Prüfstand stehen unter [Kameratest](Docs/Architecture/kameratest.md).
+
 ## Bauen und prüfen
 
 Android SDK 35 und ein für den Gradle-Wrapper geeignetes JDK werden benötigt. Android Studios Java-Laufzeit kann über `JAVA_HOME` ausgewählt werden; die Gradle-Daemon-Konfiguration liegt unter `gradle/gradle-daemon-jvm.properties`.
