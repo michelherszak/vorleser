@@ -1,5 +1,6 @@
 package de.vorleser
 
+import androidx.annotation.StringRes
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -9,7 +10,11 @@ interface SpeechOutput {
     fun enqueue(text: String, id: String): Boolean
 }
 
-data class SpeechState(val initializing: Boolean = true, val speaking: Boolean = false, val error: String? = null)
+data class SpeechState(
+    val initializing: Boolean = true,
+    val speaking: Boolean = false,
+    @StringRes val error: Int? = null,
+)
 
 /** Called on the main thread. Old engine callbacks cannot affect a newer reading. */
 class SpeechPlayback(private val output: SpeechOutput) {
@@ -24,7 +29,7 @@ class SpeechPlayback(private val output: SpeechOutput) {
         mutableState.value = SpeechState()
     }
 
-    fun initialized(error: String? = null) {
+    fun initialized(@StringRes error: Int? = null) {
         mutableState.value = SpeechState(initializing = false, error = error)
         val text = pending
         pending = null
@@ -56,7 +61,7 @@ class SpeechPlayback(private val output: SpeechOutput) {
         if (!id.startsWith("$generation-")) return
         stop()
         mutableState.value = SpeechState(initializing = false,
-            error = "Die Sprachausgabe ist fehlgeschlagen. Bitte prüfen Sie die deutsche Offline-Stimme in den Spracheinstellungen.")
+            error = R.string.speech_failed)
     }
 
     fun stop() {

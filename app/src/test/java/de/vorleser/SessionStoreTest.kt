@@ -83,4 +83,18 @@ class SessionStoreTest {
     @Test fun `photo names cannot escape the session directory`() {
         assertThrows(IllegalArgumentException::class.java) { SessionStore(directory()).photo("../secret") }
     }
+
+    @Test fun `permission failure during cleanup cannot turn a committed save into a failed save`() {
+        val normal = SessionStore(directory())
+        directory().mkdirs()
+        val photo = normal.photo("page-aaa.jpg").apply { writeText("photo") }
+        normal.save(ReadingSession(listOf("Erste Seite"), photo.name))
+        val denied = SessionStore(directory()) { throw SecurityException("Deletion denied") }
+        val next = ReadingSession(listOf("Erste Seite", "Zweite Seite"))
+        assertTrue(denied.save(next).cleanupPending)
+        assertEquals(next, normal.load())
+        assertTrue(photo.exists())
+        assertTrue(normal.cleanup(next))
+        assertFalse(photo.exists())
+    }
 }

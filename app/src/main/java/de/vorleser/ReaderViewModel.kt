@@ -1,10 +1,13 @@
 package de.vorleser
 
-import android.app.Application
-import android.content.Context
-import androidx.lifecycle.AndroidViewModel
+import androidx.annotation.StringRes
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.File
+import java.io.IOException
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -13,63 +16,81 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.IOException
-import java.util.UUID
 
 internal enum class Screen { HOME, CAMERA, REVIEW, WORKING, RESULT, ERROR, SETTINGS }
-internal data class ReaderProblem(val message: String, val recovery: Recovery? = null)
+internal enum class ProblemKind { GENERAL, CAMERA }
+internal data class ReaderProblem(
+    @StringRes val message: Int,
+    val recovery: Recovery? = null,
+    val kind: ProblemKind = ProblemKind.GENERAL,
+)
 internal data class ReaderState(
     val screen: Screen = Screen.WORKING,
     val session: ReadingSession = ReadingSession(),
     val problem: ReaderProblem? = null,
-    val workLabel: String = "Ich öffne den letzten Brief …",
+    @StringRes val workLabel: Int = R.string.opening_letter,
+    val workPage: Int = 0,
     val canCancel: Boolean = false,
-    val notice: String? = null,
+    val unsavedChanges: Boolean = false,
+    val cleanupPending: Boolean = false,
 )
 
-class ReaderViewModel(application: Application) : AndroidViewModel(application) {
-    private val store = SessionStore(File(application.noBackupFilesDir, "reading-session"))
-    private val client = ClaudeClient()
-    val speaker = Speaker(application)
+class ReaderViewModel(
+    private val store: ReadingStore,
+    private val client: DocumentReader,
+    val speaker: ReaderSpeaker,
+    private val keys: ApiKeyStore,
+    private val captures: CaptureFiles,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+) : ViewModel() {
     private val mutableState = MutableStateFlow(ReaderState())
     internal val state = mutableState.asStateFlow()
     private var analysis: Job? = null
-    private val prefs = application.getSharedPreferences("vorleser", Context.MODE_PRIVATE)
 
     init {
         viewModelScope.launch {
             try {
-                val session = withContext(Dispatchers.IO) {
-                    application.cacheDir.listFiles()?.filter { it.name.startsWith("capture-") }?.forEach { it.delete() }
-                    store.load()
+                val (session, clean) = withContext(ioDispatcher) {
+                    captures.clearCaptures()
+                    val session = store.load()
+                    session to store.cleanup(session)
                 }
-                mutableState.value = ReaderState(screen = session.screen(), session = session)
+                mutableState.value = ReaderState(screen = session.screen(), session = session, cleanupPending = !clean)
             } catch (e: IOException) {
-                fail("Der letzte Brief konnte nicht geöffnet werden. Sie können mit „Neuer Brief“ eine neue Sitzung beginnen.")
+                fail(R.string.session_load_failed)
             }
         }
     }
 
-    fun apiKey(): String = prefs.getString("api_key", "").orEmpty()
+    fun apiKey(): String = keys.load()
     fun saveApiKey(value: String) {
-        if (!prefs.edit().putString("api_key", value.trim()).commit()) {
-            fail("Der API-Schlüssel konnte nicht gespeichert werden. Bitte prüfen Sie den freien Speicherplatz.", Recovery.SETTINGS)
-            return
+        if (mutableState.value.screen == Screen.WORKING) return
+        mutableState.value = mutableState.value.copy(screen = Screen.WORKING, workLabel = R.string.saving_key)
+        viewModelScope.launch {
+            if (!withContext(ioDispatcher) { keys.save(value.trim()) }) {
+                fail(R.string.key_save_failed, Recovery.SETTINGS)
+            } else {
+                mutableState.value = mutableState.value.copy(screen = mutableState.value.session.screen(), problem = null)
+            }
         }
-        back()
     }
 
     fun photo(): File? = mutableState.value.session.draftPhoto?.let(store::photo)
-    fun captureFile(): File = File(getApplication<Application>().cacheDir, "capture-${UUID.randomUUID()}.jpg")
+    fun captureFile(): File = captures.create()
 
     internal fun camera() {
         if (mutableState.value.screen == Screen.WORKING) return
+        if (mutableState.value.unsavedChanges) { resumeSession(); return }
         speaker.stop()
         mutableState.value = mutableState.value.copy(screen = Screen.CAMERA, problem = null)
     }
-    internal fun settings() { mutableState.value = mutableState.value.copy(screen = Screen.SETTINGS) }
+    internal fun settings() {
+        if (mutableState.value.screen != Screen.WORKING) {
+            mutableState.value = mutableState.value.copy(screen = Screen.SETTINGS)
+        }
+    }
     internal fun resumeSession() {
+        if (mutableState.value.screen == Screen.WORKING) return
         mutableState.value = mutableState.value.copy(screen = mutableState.value.session.screen(), problem = null)
     }
     internal fun back() {
@@ -82,64 +103,84 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         }
         mutableState.value = state.copy(screen = screen, problem = null)
     }
-    internal fun cameraError(message: String) { fail(message, Recovery.RETAKE) }
+    internal fun cameraError(@StringRes message: Int) { fail(message, Recovery.RETAKE, ProblemKind.CAMERA) }
 
     fun captured(source: File) {
         if (mutableState.value.screen != Screen.CAMERA) { source.delete(); return }
         val previous = mutableState.value.session
-        mutableState.value = mutableState.value.copy(screen = Screen.WORKING, workLabel = "Ich bereite das Foto vor …", canCancel = false)
+        mutableState.value = mutableState.value.copy(screen = Screen.WORKING, workLabel = R.string.preparing_photo, canCancel = false)
         viewModelScope.launch {
             val name = "page-${UUID.randomUUID()}.jpg"
             val next = previous.copy(draftPhoto = name)
             try {
-                withContext(Dispatchers.IO) {
-                    PhotoFiles.prepare(source, store.photo(name))
+                val result = withContext(ioDispatcher) {
+                    captures.prepare(source, store.photo(name))
                     store.save(next)
                 }
-                mutableState.value = ReaderState(screen = Screen.REVIEW, session = next)
+                mutableState.value = ReaderState(screen = Screen.REVIEW, session = next, cleanupPending = result.cleanupPending)
             } catch (e: IOException) {
                 store.photo(name).delete()
-                fail("Das Foto konnte nicht gespeichert werden. Bitte prüfen Sie den freien Speicherplatz und fotografieren Sie die Seite erneut.", Recovery.RETAKE)
+                fail(R.string.photo_save_failed, Recovery.RETAKE)
             } finally { source.delete() }
         }
     }
 
     fun analyze() {
-        if (mutableState.value.screen == Screen.WORKING || analysis?.isActive == true) return
+        if (mutableState.value.screen == Screen.WORKING || analysis?.isActive == true || mutableState.value.unsavedChanges) return
         val photo = photo() ?: run { camera(); return }
         val key = apiKey()
         if (key.isBlank()) {
-            fail("Bitte lassen Sie zuerst den API-Schlüssel in den Einstellungen eintragen.", Recovery.SETTINGS)
+            fail(R.string.missing_key, Recovery.SETTINGS)
             return
         }
         val previous = mutableState.value.session
         mutableState.value = mutableState.value.copy(screen = Screen.WORKING, problem = null,
-            workLabel = "Ich lese Seite ${previous.pages.size + 1} …", canCancel = true)
+            workLabel = R.string.reading_page, workPage = previous.pages.size + 1, canCancel = true)
         analysis = viewModelScope.launch {
             try {
                 val text = client.analyze(key, photo)
                 ensureActive()
-                // Once a result exists, finish its atomic save before allowing another operation.
-                analysis = null
-                mutableState.value = mutableState.value.copy(workLabel = "Ich sichere den Text …", canCancel = false)
+                mutableState.value = mutableState.value.copy(workLabel = R.string.saving_text, canCancel = false)
                 val next = ReadingSession(pages = previous.pages + text)
-                val notice = try {
-                    withContext(NonCancellable + Dispatchers.IO) { store.save(next) }
-                    null
-                } catch (e: IOException) {
-                    "Der Text ist nur bis zum Schließen der App verfügbar, weil er nicht gespeichert werden konnte. Bitte prüfen Sie den freien Speicherplatz."
-                }
-                mutableState.value = ReaderState(screen = Screen.RESULT, session = next, notice = notice)
+                // Keep a recognized result available even if the local commit fails.
+                val result = try {
+                    withContext(NonCancellable + ioDispatcher) { store.save(next) }
+                } catch (e: IOException) { null }
+                mutableState.value = ReaderState(screen = Screen.RESULT, session = next,
+                    unsavedChanges = result == null, cleanupPending = result?.cleanupPending ?: false)
                 speaker.speak(text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ReadingException) {
                 fail(e.userMessage, e.recovery)
             } catch (e: IOException) {
-                fail("Das gespeicherte Foto konnte nicht gelesen werden. Bitte fotografieren Sie die Seite erneut.", Recovery.RETAKE)
+                fail(R.string.photo_read_failed, Recovery.RETAKE)
             } catch (e: Exception) {
-                fail("Die Seite konnte nicht gelesen werden. Ihr Foto bleibt für einen erneuten Versuch erhalten.", Recovery.RETRY)
+                fail(R.string.read_failed, Recovery.RETRY)
             }
+        }
+    }
+
+    fun retrySave() {
+        val previous = mutableState.value
+        if (!previous.unsavedChanges || previous.screen == Screen.WORKING) return
+        mutableState.value = previous.copy(screen = Screen.WORKING, workLabel = R.string.saving_text, canCancel = false)
+        viewModelScope.launch {
+            val result = try {
+                withContext(NonCancellable + ioDispatcher) { store.save(previous.session) }
+            } catch (e: IOException) { null }
+            mutableState.value = previous.copy(screen = Screen.RESULT, problem = null,
+                unsavedChanges = result == null, cleanupPending = result?.cleanupPending ?: false)
+        }
+    }
+
+    fun retryCleanup() {
+        val previous = mutableState.value
+        if (!previous.cleanupPending || previous.unsavedChanges || previous.screen == Screen.WORKING) return
+        mutableState.value = previous.copy(screen = Screen.WORKING, workLabel = R.string.cleaning_photos, canCancel = false)
+        viewModelScope.launch {
+            val clean = withContext(ioDispatcher) { store.cleanup(previous.session) }
+            mutableState.value = previous.copy(cleanupPending = !clean)
         }
     }
 
@@ -153,19 +194,20 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     fun newLetter() {
         if (mutableState.value.screen == Screen.WORKING) return
         speaker.stop()
-        mutableState.value = mutableState.value.copy(screen = Screen.WORKING, workLabel = "Ich schließe den Brief …", canCancel = false)
+        mutableState.value = mutableState.value.copy(screen = Screen.WORKING, workLabel = R.string.closing_letter, canCancel = false)
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { store.save(ReadingSession()) }
-                mutableState.value = ReaderState(screen = Screen.HOME)
+                val result = withContext(ioDispatcher) { store.save(ReadingSession()) }
+                mutableState.value = ReaderState(screen = Screen.HOME, cleanupPending = result.cleanupPending)
             } catch (e: IOException) {
-                fail("Der Brief konnte nicht gelöscht werden. Bitte prüfen Sie den freien Speicherplatz und versuchen Sie „Neuer Brief“ erneut.")
+                fail(R.string.letter_clear_failed)
             }
         }
     }
 
-    private fun fail(message: String, recovery: Recovery? = null) {
-        mutableState.value = mutableState.value.copy(screen = Screen.ERROR, problem = ReaderProblem(message, recovery), canCancel = false)
+    private fun fail(@StringRes message: Int, recovery: Recovery? = null, kind: ProblemKind = ProblemKind.GENERAL) {
+        mutableState.value = mutableState.value.copy(screen = Screen.ERROR,
+            problem = ReaderProblem(message, recovery, kind), canCancel = false)
     }
 
     override fun onCleared() { speaker.shutdown(); super.onCleared() }

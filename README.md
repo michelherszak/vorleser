@@ -2,6 +2,8 @@
 
 Android-App für die Familie: eine Briefseite fotografieren, das Foto prüfen, Text einlesen und auf Deutsch vorlesen lassen. Kotlin, Jetpack Compose und CameraX; Android 8 oder neuer.
 
+Die [technische Dokumentation](Docs/README.md) enthält die Architekturübersicht und Findings unter `Docs/Architecture` sowie Architekturentscheidungen unter `Docs/ADR`.
+
 ## Einlesen und Vorlesen
 
 - **Texterkennung:** Claude Sonnet 5.5 (`claude-sonnet-5-5`) verarbeitet das Foto über die Anthropic-API. Das Einlesen benötigt Internet und API-Guthaben. Beträge, Datumsangaben und Namen werden im Original übernommen; unlesbare Stellen sollen gekennzeichnet werden. Eine KI-Transkription kann trotzdem Fehler enthalten.
@@ -9,6 +11,8 @@ Android-App für die Familie: eine Briefseite fotografieren, das Foto prüfen, T
 - Jede Aufnahme wird vor dem Hochladen angezeigt. „Neu fotografieren“ ersetzt nur die aktuelle Aufnahme; bereits eingelesene Seiten bleiben erhalten.
 - „Weitere Seite“ hängt die nächste Seite an denselben Brief an. Nach dem Einlesen wird die neue Seite vorgelesen; „Vorlesen“ liest den gesamten Brief. „Stopp“ beendet auch eine noch wartende Sprachausgabe.
 - „Abbrechen“ beendet eine laufende Verbindung und kehrt zur Fotovorschau zurück. Wiederholungen erfolgen nur auf ausdrücklichen Tastendruck.
+- Kann erkannter Text nicht gespeichert werden, bleibt er zunächst sichtbar. „Speichern erneut versuchen“ wiederholt nur die lokale Speicherung, ohne einen weiteren Upload. Bis zum erfolgreichen Speichern ist „Weitere Seite“ gesperrt; beim Schließen der App geht ungesicherter Text verloren.
+- Lassen sich alte Sitzungsfotos nicht entfernen, meldet die App das getrennt von einem Speicherfehler. „Fotos erneut löschen“ wiederholt die Bereinigung; auch beim nächsten Start wird sie versucht. Das aktuelle Wiederholungsfoto bleibt dabei erhalten.
 - Abgeschnittene, leere und unvollständige API-Antworten werden nicht als vollständige Seite übernommen. Die App bietet erneutes Einlesen oder eine neue Aufnahme an. Sehr dichte Seiten bei Bedarf in kleineren Abschnitten fotografieren.
 
 ## Einrichtung und Daten

@@ -36,7 +36,7 @@ class ClaudeClientTest {
         for (stop in listOf("max_tokens", "model_context_window_exceeded")) {
             val error = assertThrows(ReadingException::class.java) { ClaudeClient.parseResponse(200, response(stop = stop)) }
             assertEquals(Recovery.RETAKE, error.recovery)
-            assertTrue(error.userMessage.contains("abgeschnitten"))
+            assertEquals(R.string.reply_truncated, error.userMessage)
         }
     }
 
@@ -56,7 +56,7 @@ class ClaudeClientTest {
             429 to Recovery.RETRY, 503 to Recovery.RETRY, 529 to Recovery.RETRY, 413 to Recovery.RETAKE)) {
             val error = assertThrows(ReadingException::class.java) { ClaudeClient.parseResponse(code, "private server details") }
             assertEquals(action, error.recovery)
-            assertFalse(error.userMessage.contains("private server details"))
+            assertFalse(error.message.orEmpty().contains("private server details"))
         }
         val noCredit = """{"error":{"type":"invalid_request_error","message":"Your credit balance is too low"}}"""
         assertEquals(Recovery.SETTINGS, assertThrows(ReadingException::class.java) { ClaudeClient.parseResponse(400, noCredit) }.recovery)
@@ -121,6 +121,6 @@ class ClaudeClientTest {
         val client = ClaudeClient(http, server.url("/").toString())
         val error = assertThrows(ReadingException::class.java) { runBlocking { client.analyze("key", temporary.newFile()) } }
         assertEquals(Recovery.RETRY, error.recovery)
-        assertTrue(error.userMessage.contains("zu lange"))
+        assertEquals(R.string.service_timeout, error.userMessage)
     }
 }
