@@ -1,30 +1,64 @@
 package de.vorleser
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
-/** Deutsche Sprachausgabe über die eingebaute Android-TTS, etwas langsamer für ältere Hörer. */
-class Speaker(context: Context) {
-    private var ready = false
-    private var pending: String? = null
-    private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
-        if (status == TextToSpeech.SUCCESS) {
-            ready = tts.setLanguage(Locale.GERMANY) >= TextToSpeech.LANG_AVAILABLE
-            tts.setSpeechRate(0.85f)
-            pending?.let { speak(it); pending = null }
+/** Uses an installed German offline voice; no document text is sent to a cloud speech service. */
+class Speaker(private val context: Context) {
+    private val main = Handler(Looper.getMainLooper())
+    private var tts: TextToSpeech? = null
+    private var closed = false
+    private var initialization = 0L
+    private val playback = SpeechPlayback(object : SpeechOutput {
+        override val maxInputLength get() = TextToSpeech.getMaxSpeechInputLength()
+        override fun stop() { tts?.stop() }
+        override fun enqueue(text: String, id: String): Boolean =
+            tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
+    })
+    val state = playback.state
+
+    init { initialize() }
+
+    fun initialize() {
+        if (closed) return
+        playback.beginInitialization()
+        val currentInitialization = ++initialization
+        tts?.shutdown()
+        tts = null
+        tts = TextToSpeech(context.applicationContext) { status ->
+            main.post {
+                if (closed || currentInitialization != initialization) return@post
+                val engine = tts ?: return@post
+                val voice = if (status == TextToSpeech.SUCCESS) engine.voices
+                    ?.filter { it.locale.language == "de" && !it.isNetworkConnectionRequired }
+                    ?.sortedWith(compareByDescending<android.speech.tts.Voice> { it.locale == Locale.GERMANY }
+                        .thenByDescending { it.quality })?.firstOrNull() else null
+                val ready = voice != null && engine.setVoice(voice) == TextToSpeech.SUCCESS
+                if (ready) engine.setSpeechRate(0.85f)
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(id: String) = Unit
+                    override fun onDone(id: String) { main.post { if (!closed) playback.completed(id) } }
+                    @Deprecated("Required by the Android interface")
+                    override fun onError(id: String) { main.post { if (!closed) playback.failed(id) } }
+                    override fun onError(id: String, errorCode: Int) { onError(id) }
+                })
+                playback.initialized(if (ready) null else
+                    "Keine deutsche Offline-Stimme verfügbar. Bitte installieren Sie eine deutsche Stimme in den Spracheinstellungen und prüfen Sie die Stimme danach erneut.")
+            }
         }
     }
 
-    fun speak(text: String) {
-        if (!ready) { pending = text; return }
-        tts.stop()
-        // Lange Texte in Absätze teilen (TTS-Limit pro Aufruf)
-        text.split(Regex("\n+")).filter { it.isNotBlank() }.forEachIndexed { i, p ->
-            p.chunked(3000).forEach { tts.speak(it, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, "p$i") }
-        }
+    fun speak(text: String) = playback.speak(text)
+    fun stop() = playback.stop()
+    fun shutdown() {
+        closed = true
+        playback.stop()
+        tts?.shutdown()
+        tts = null
+        main.removeCallbacksAndMessages(null)
     }
-
-    fun stop() { tts.stop() }
-    fun shutdown() { tts.stop(); tts.shutdown() }
 }
