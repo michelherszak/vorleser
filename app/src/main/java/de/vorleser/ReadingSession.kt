@@ -1,11 +1,11 @@
 package de.vorleser
 
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class ReadingSession(val pages: List<String> = emptyList(), val draftPhoto: String? = null) {
     val text: String get() = if (pages.size == 1) pages.first() else
@@ -13,15 +13,18 @@ data class ReadingSession(val pages: List<String> = emptyList(), val draftPhoto:
 }
 
 /** App-private, excluded from backups. Only the current letter and an optional retry photo. */
-class SessionStore(private val directory: File) {
+class SessionStore(
+    private val directory: File,
+    private val deletePhoto: (File) -> Boolean = { it.delete() },
+) : ReadingStore {
     private val metadata get() = File(directory, "session.json")
 
-    fun photo(name: String): File {
+    override fun photo(name: String): File {
         require(name.matches(Regex("page-[a-f0-9-]+\\.jpg"))) { "Invalid photo name" }
         return File(directory, name)
     }
 
-    fun load(): ReadingSession {
+    override fun load(): ReadingSession {
         if (!metadata.exists()) return ReadingSession()
         try {
             val json = JSONObject(metadata.readText())
@@ -33,7 +36,7 @@ class SessionStore(private val directory: File) {
         }
     }
 
-    fun save(session: ReadingSession) {
+    override fun save(session: ReadingSession): SaveResult {
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Cannot create session directory")
         session.draftPhoto?.let { if (!photo(it).isFile) throw IOException("Missing draft photo") }
         val json = JSONObject().put("pages", JSONArray(session.pages))
@@ -46,8 +49,22 @@ class SessionStore(private val directory: File) {
             }
             Files.move(temporary.toPath(), metadata.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally { temporary.delete() }
-        // A failed save must never delete the last successfully saved draft.
-        directory.listFiles()?.filter { it.name.startsWith("page-") && it.name != session.draftPhoto }
-            ?.forEach { it.delete() }
+        // Cleanup must not turn an already committed save into a reported save failure.
+        return SaveResult(cleanupPending = !cleanup(session))
+    }
+
+    override fun cleanup(session: ReadingSession): Boolean {
+        try {
+            if (!directory.exists()) return true
+            val files = directory.listFiles() ?: return false
+            var complete = true
+            for (file in files.filter { it.name.startsWith("page-") && it.name != session.draftPhoto }) {
+                val deleted = try { deletePhoto(file) } catch (_: SecurityException) { false }
+                if (!deleted && file.exists()) complete = false
+            }
+            return complete
+        } catch (_: SecurityException) {
+            return false
+        }
     }
 }

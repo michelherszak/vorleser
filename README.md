@@ -2,6 +2,8 @@
 
 Android-App für die Familie: eine Briefseite fotografieren, das Foto prüfen, Text einlesen und auf Deutsch vorlesen lassen. Kotlin, Jetpack Compose und CameraX; Android 8 oder neuer.
 
+Die [technische Dokumentation](Docs/README.md) enthält die Architekturübersicht und Findings unter `Docs/Architecture` sowie Architekturentscheidungen unter `Docs/ADR`.
+
 ## Einlesen und Vorlesen
 
 - **Texterkennung:** Claude Sonnet 5.5 (`claude-sonnet-5-5`) verarbeitet das Foto über die Anthropic-API. Das Einlesen benötigt Internet und API-Guthaben. Beträge, Datumsangaben und Namen werden im Original übernommen; unlesbare Stellen sollen gekennzeichnet werden. Eine KI-Transkription kann trotzdem Fehler enthalten.
@@ -9,6 +11,8 @@ Android-App für die Familie: eine Briefseite fotografieren, das Foto prüfen, T
 - Jede Aufnahme wird vor dem Hochladen angezeigt. „Neu fotografieren“ ersetzt nur die aktuelle Aufnahme; bereits eingelesene Seiten bleiben erhalten.
 - „Weitere Seite“ hängt die nächste Seite an denselben Brief an. Nach dem Einlesen wird die neue Seite vorgelesen; „Vorlesen“ liest den gesamten Brief. „Stopp“ beendet auch eine noch wartende Sprachausgabe.
 - „Abbrechen“ beendet eine laufende Verbindung und kehrt zur Fotovorschau zurück. Wiederholungen erfolgen nur auf ausdrücklichen Tastendruck.
+- Kann erkannter Text nicht gespeichert werden, bleibt er zunächst sichtbar. „Speichern erneut versuchen“ wiederholt nur die lokale Speicherung, ohne einen weiteren Upload. Bis zum erfolgreichen Speichern ist „Weitere Seite“ gesperrt; beim Schließen der App geht ungesicherter Text verloren.
+- Lassen sich alte Sitzungsfotos nicht entfernen, meldet die App das getrennt von einem Speicherfehler. „Fotos erneut löschen“ wiederholt die Bereinigung; auch beim nächsten Start wird sie versucht. Das aktuelle Wiederholungsfoto bleibt dabei erhalten.
 - Abgeschnittene, leere und unvollständige API-Antworten werden nicht als vollständige Seite übernommen. Die App bietet erneutes Einlesen oder eine neue Aufnahme an. Sehr dichte Seiten bei Bedarf in kleineren Abschnitten fotografieren.
 
 ## Einrichtung und Daten
@@ -23,9 +27,13 @@ Der aktuelle Brief und ein noch nicht erfolgreich eingelesenes Foto werden im pr
 
 Die App wird durch diese Änderungen nicht veröffentlicht. Für eine spätere öffentliche Verteilung wären ein authentifizierter Backend-Proxy statt eines gemeinsamen App-Schlüssels, eine bewusste Kostenbegrenzung und ein passender Datenschutzhinweis nötig.
 
+## Kameras am Entwicklungs-Mac testen
+
+Die App zeigt die aktive Android-Kamera an und kann zwischen allen von CameraX angebotenen Kameras wechseln. Eine Aufnahme ist möglich, sobald die Vorschau Bilder liefert. Die Zuordnung von Laptopkamera und RealSense zum Android-Emulator wird auf dem Mac eingerichtet; sie ist nicht Bestandteil der APK. Einrichtung und aktueller Prüfstand stehen unter [Kameratest](Docs/Architecture/kameratest.md).
+
 ## Bauen und prüfen
 
-Android SDK 35 und ein für den Gradle-Wrapper geeignetes JDK werden benötigt. Android Studios Java-Laufzeit kann über `JAVA_HOME` ausgewählt werden; die Gradle-Daemon-Konfiguration liegt unter `gradle/gradle-daemon-jvm.properties`.
+Android SDK 36 und ein für den Gradle-Wrapper geeignetes JDK werden benötigt. Android Studios Java-Laufzeit kann über `JAVA_HOME` ausgewählt werden; die Gradle-Daemon-Konfiguration liegt unter `gradle/gradle-daemon-jvm.properties`.
 
 ```sh
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
@@ -37,3 +45,7 @@ Der zweite Aufruf benötigt ein Android-Testgerät oder einen gestarteten Emulat
 Die Debug-APK liegt unter `app/build/outputs/apk/debug/app-debug.apk`.
 
 Für eine signierte Release-Version `keystore.properties` mit `storeFile`, `storePassword`, `keyAlias`, `keyPassword` lokal anlegen und `./gradlew :app:bundleRelease` ausführen. Schlüsseldateien und API-Schlüssel gehören nicht ins Repository.
+
+## GitHub und Google Play
+
+[Einrichtung und Bedienung der Veröffentlichung](Docs/Delivery/google-play.md): GitHub Actions prüft Pull Requests und baut auf manuellen Start ein signiertes App Bundle für den internen Testkanal. Die Erstkonfiguration benötigt einen Upload-Keystore sowie ein Google-Dienstkonto mit OIDC-Anbindung. Eine öffentliche Veröffentlichung wird durch diese Workflows nicht ausgelöst.

@@ -1,5 +1,13 @@
 package de.vorleser
 
+import androidx.annotation.StringRes
+import java.io.File
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.util.Base64
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -13,17 +21,13 @@ import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
-import java.io.File
-import java.io.IOException
-import java.net.SocketTimeoutException
-import java.util.Base64
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 enum class Recovery { RETRY, SETTINGS, RETAKE }
 
-class ReadingException(val userMessage: String, val recovery: Recovery) : IOException(userMessage)
+class ReadingException(
+    @StringRes val userMessage: Int,
+    val recovery: Recovery,
+) : IOException("Reading failed ($userMessage)")
 
 /** One explicit upload per request. Cancelling the coroutine also cancels the HTTP call. */
 class ClaudeClient(
@@ -34,14 +38,14 @@ class ClaudeClient(
         .retryOnConnectionFailure(false)
         .build(),
     private val endpoint: String = "https://api.anthropic.com/v1/messages",
-) {
-    suspend fun analyze(apiKey: String, photo: File): String {
+) : DocumentReader {
+    override suspend fun analyze(apiKey: String, photo: File): String {
         if (apiKey.isBlank()) throw ReadingException(
-            "Bitte lassen Sie zuerst den API-Schlüssel in den Einstellungen eintragen.", Recovery.SETTINGS,
+            R.string.missing_key, Recovery.SETTINGS,
         )
         val key = apiKey.trim()
         if (key.any { it <= ' ' || it >= '\u007f' }) throw ReadingException(
-            "Der API-Schlüssel enthält ungültige Zeichen. Bitte prüfen Sie die Einstellungen.", Recovery.SETTINGS,
+            R.string.invalid_key_characters, Recovery.SETTINGS,
         )
         val request = withContext(Dispatchers.IO) {
             val image = Base64.getEncoder().encodeToString(photo.readBytes())
@@ -54,12 +58,12 @@ class ClaudeClient(
         val (code, body) = try {
             http.newCall(request).readResponse()
         } catch (e: SocketTimeoutException) {
-            throw ReadingException("Der Lesedienst braucht zu lange. Bitte versuchen Sie es erneut.", Recovery.RETRY)
+            throw ReadingException(R.string.service_timeout, Recovery.RETRY)
         } catch (e: IOException) {
             if (e is java.io.InterruptedIOException) throw ReadingException(
-                "Der Lesedienst braucht zu lange. Bitte versuchen Sie es erneut.", Recovery.RETRY,
+                R.string.service_timeout, Recovery.RETRY,
             )
-            throw ReadingException("Keine Verbindung zum Lesedienst. Bitte prüfen Sie das Internet und versuchen Sie es erneut.", Recovery.RETRY)
+            throw ReadingException(R.string.service_connection_failed, Recovery.RETRY)
         }
         return parseResponse(code, body)
     }
@@ -113,28 +117,28 @@ class ClaudeClient(
 
         internal fun parseResponse(code: Int, body: String): String {
             if (code !in 200..299) throw when (code) {
-                401, 403 -> ReadingException("Der API-Schlüssel ist ungültig oder hat keine Berechtigung. Bitte prüfen Sie die Einstellungen.", Recovery.SETTINGS)
-                402 -> ReadingException("Das API-Guthaben ist aufgebraucht. Bitte lassen Sie das Guthaben prüfen.", Recovery.SETTINGS)
-                429 -> ReadingException("Der Lesedienst erhält gerade zu viele Anfragen. Bitte warten Sie etwas und versuchen Sie es erneut.", Recovery.RETRY)
-                413 -> ReadingException("Das Foto ist zu groß. Bitte fotografieren Sie nur eine Seite.", Recovery.RETAKE)
-                404 -> ReadingException("Das eingestellte Lesemodell ist nicht verfügbar. Bitte lassen Sie die App aktualisieren.", Recovery.SETTINGS)
+                401, 403 -> ReadingException(R.string.invalid_key, Recovery.SETTINGS)
+                402 -> ReadingException(R.string.no_credit, Recovery.SETTINGS)
+                429 -> ReadingException(R.string.service_busy, Recovery.RETRY)
+                413 -> ReadingException(R.string.photo_too_large, Recovery.RETAKE)
+                404 -> ReadingException(R.string.model_unavailable, Recovery.SETTINGS)
                 400 -> {
                     val message = runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrDefault("")
                     if (message.contains("credit balance", ignoreCase = true))
-                        ReadingException("Das API-Guthaben ist aufgebraucht. Bitte lassen Sie das Guthaben prüfen.", Recovery.SETTINGS)
-                    else ReadingException("Der Lesedienst konnte das Foto nicht verarbeiten. Bitte fotografieren Sie die Seite erneut.", Recovery.RETAKE)
+                        ReadingException(R.string.no_credit, Recovery.SETTINGS)
+                    else ReadingException(R.string.photo_rejected, Recovery.RETAKE)
                 }
-                else -> ReadingException("Der Lesedienst ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut.", Recovery.RETRY)
+                else -> ReadingException(R.string.service_unavailable, Recovery.RETRY)
             }
             try {
                 val response = JSONObject(body)
                 when (response.optString("stop_reason")) {
                     "max_tokens", "model_context_window_exceeded" -> throw ReadingException(
-                        "Die Antwort wurde abgeschnitten. Sie wird nicht als vollständige Seite vorgelesen. Bitte fotografieren Sie die Seite in kleineren Abschnitten.", Recovery.RETAKE,
+                        R.string.reply_truncated, Recovery.RETAKE,
                     )
-                    "refusal" -> throw ReadingException("Der Lesedienst konnte diese Seite nicht wiedergeben. Bitte versuchen Sie ein neues Foto.", Recovery.RETAKE)
+                    "refusal" -> throw ReadingException(R.string.reply_refused, Recovery.RETAKE)
                     "end_turn" -> Unit
-                    else -> throw ReadingException("Der Lesedienst hat die Seite nicht vollständig zurückgegeben. Bitte versuchen Sie es erneut.", Recovery.RETRY)
+                    else -> throw ReadingException(R.string.reply_incomplete, Recovery.RETRY)
                 }
                 val blocks = response.getJSONArray("content")
                 val json = buildString {
@@ -146,13 +150,13 @@ class ClaudeClient(
                 val result = JSONObject(json)
                 val kind = result.getString("kind")
                 if (kind == "unreadable") throw ReadingException(
-                    "Die Seite ist nicht gut lesbar oder nicht vollständig im Bild. Bitte fotografieren Sie sie erneut, mit gutem Licht und ohne abgeschnittene Ränder.", Recovery.RETAKE,
+                    R.string.photo_unreadable, Recovery.RETAKE,
                 )
                 val text = result.getString("text").trim()
                 if (kind !in listOf("document", "image") || text.isBlank()) throw JSONException("Empty or unsupported result")
                 return text
             } catch (e: JSONException) {
-                throw ReadingException("Der Lesedienst hat keine lesbare Antwort geliefert. Bitte versuchen Sie es erneut.", Recovery.RETRY)
+                throw ReadingException(R.string.reply_invalid, Recovery.RETRY)
             }
         }
     }

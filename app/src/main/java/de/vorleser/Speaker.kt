@@ -8,7 +8,7 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /** Uses an installed German offline voice; no document text is sent to a cloud speech service. */
-class Speaker(private val context: Context) {
+class Speaker(private val context: Context) : ReaderSpeaker {
     private val main = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
     private var closed = false
@@ -19,11 +19,11 @@ class Speaker(private val context: Context) {
         override fun enqueue(text: String, id: String): Boolean =
             tts?.speak(text, TextToSpeech.QUEUE_ADD, null, id) == TextToSpeech.SUCCESS
     })
-    val state = playback.state
+    override val state = playback.state
 
     init { initialize() }
 
-    fun initialize() {
+    override fun initialize() {
         if (closed) return
         playback.beginInitialization()
         val currentInitialization = ++initialization
@@ -47,14 +47,14 @@ class Speaker(private val context: Context) {
                     override fun onError(id: String, errorCode: Int) { onError(id) }
                 })
                 playback.initialized(if (ready) null else
-                    "Keine deutsche Offline-Stimme verfügbar. Bitte installieren Sie eine deutsche Stimme in den Spracheinstellungen und prüfen Sie die Stimme danach erneut.")
+                    R.string.voice_missing)
             }
         }
     }
 
-    fun speak(text: String) = playback.speak(text)
-    fun stop() = playback.stop()
-    fun shutdown() {
+    override fun speak(text: String) = playback.speak(text)
+    override fun stop() = playback.stop()
+    override fun shutdown() {
         closed = true
         playback.stop()
         tts?.shutdown()

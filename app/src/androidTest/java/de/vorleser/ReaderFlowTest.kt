@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
@@ -21,11 +22,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ReaderFlowTest {
@@ -123,6 +126,26 @@ class ReaderFlowTest {
             waitForText("Letzten Brief öffnen")
             compose.onNodeWithText("Letzten Brief öffnen").performClick()
             waitForText("Seite 1 prüfen")
+        }
+    }
+
+    @Test fun cameraSwitchUsesAnotherAvailableCameraAndSurvivesRecreation() {
+        val count = ProcessCameraProvider.getInstance(context).get(20, TimeUnit.SECONDS).availableCameraInfos.size
+        assumeTrue("This test requires two Android cameras", count > 1)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitForText("Brief fotografieren")
+            compose.onNodeWithText("Brief fotografieren").performClick()
+            compose.waitUntil(20_000) { runCatching { compose.onNodeWithText("Kamera wechseln").assertIsEnabled() }.isSuccess }
+            compose.onNodeWithText("Kamera 1 von", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Kamera wechseln").performClick()
+            compose.waitUntil(20_000) { runCatching { compose.onNodeWithText("Foto aufnehmen").assertIsEnabled() }.isSuccess }
+            compose.onNodeWithText("Kamera 2 von", substring = true).assertIsDisplayed()
+            scenario.recreate()
+            compose.waitUntil(20_000) { runCatching { compose.onNodeWithText("Foto aufnehmen").assertIsEnabled() }.isSuccess }
+            compose.onNodeWithText("Kamera 2 von", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("Foto aufnehmen").performClick()
+            waitForText("Seite 1 prüfen")
+            assertNotNull(SessionStore(directory).load().draftPhoto)
         }
     }
 }
