@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-PACKAGE = 'de.vorleser.app'
+PACKAGE = 'com.octopotato.vorleser'
 TRACK = 'internal'
 ORIGIN = 'https://androidpublisher.googleapis.com'
 BASE = f'/androidpublisher/v3/applications/{PACKAGE}/edits'

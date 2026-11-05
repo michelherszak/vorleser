@@ -1,6 +1,6 @@
 # GitHub → Google Play: interner Test
 
-Stand: 05.11.2026. Repository: `michelherszak/vorleser`, Paketname: `de.vorleser.app`.
+Stand: 05.11.2026. Repository: `michelherszak/vorleser`, Paketname: `com.octopotato.vorleser`.
 
 ## Vorbereiteter Ablauf
 
@@ -15,7 +15,7 @@ Die manuellen Workflows werden in GitHub regulär angezeigt, sobald diese Dateie
 
 ## Einmalig: Play-Console-App und Upload-Schlüssel
 
-1. In der bestehenden Play-Console-App den Paketnamen prüfen. Er muss `de.vorleser.app` sein. Die numerische App-ID in der Dashboard-URL ist kein Android-Paketname.
+1. In der bestehenden Play-Console-App den Paketnamen prüfen. Er muss `com.octopotato.vorleser` sein. Die numerische App-ID in der Dashboard-URL ist kein Android-Paketname.
 2. Prüfen, ob bereits ein Bundle/APK hochgeladen und ein Upload-Zertifikat registriert wurde. In diesem Fall den passenden vorhandenen Upload-Schlüssel verwenden; keinen neuen Schlüssel blind erzeugen. Ein verlorener Upload-Schlüssel benötigt den von Google vorgesehenen Reset.
 3. Für eine neue App ohne bisherigen Schlüssel einen langlebigen Upload-Keystore erstellen und sicher sichern. Android Studio bietet dafür **Build → Generate Signed Bundle / APK → Android App Bundle → Create new**. Den Keystore und beide Passwörter dauerhaft aufbewahren. Der Debug-Schlüssel ist kein Release-Upload-Schlüssel.
 4. Unter Repository → Settings → Environments → `play-internal` folgende Secrets anlegen:
@@ -53,7 +53,7 @@ PLAY_PROJECT_ID='PROJECT_ID'
 PLAY_PROJECT_NUMBER="$(gcloud projects describe "$PLAY_PROJECT_ID" --format='value(projectNumber)')"
 PLAY_SERVICE_ACCOUNT="github-play-internal@${PLAY_PROJECT_ID}.iam.gserviceaccount.com"
 
-gcloud services enable androidpublisher.googleapis.com iamcredentials.googleapis.com \
+gcloud services enable androidpublisher.googleapis.com iam.googleapis.com iamcredentials.googleapis.com \
   sts.googleapis.com --project="$PLAY_PROJECT_ID"
 
 gcloud iam service-accounts create github-play-internal \
@@ -113,4 +113,10 @@ Die App zielt auf Android 16 / API 36; Android 8 bleibt als Mindestversion erhal
 
 Die App nutzt weiterhin einen vom Nutzer eingegebenen Anthropic-Schlüssel und überträgt Fotos an Anthropic. Die Pipeline erledigt weder Datenschutz-/Data-Safety-Erklärungen noch die noch offene Prüfung der produktiven Transkriptions-API. Diese Angaben müssen vor der jeweiligen Verteilung zutreffend in Play Console hinterlegt werden.
 
-Lokal am 05.11.2026 bestanden: 36 JVM-Tests, 10 Gerätetests auf einem separaten Emulatorprofil, 9 Python-Tests des Upload-Ablaufs, Android Lint ohne Fehler und Actionlint ohne Befund. Ein Build mit einem Wegwerfschlüssel wurde erfolgreich signiert und mit `jarsigner` verifiziert. Fehlender Upload-Schlüssel und ungültiger Versionscode wurden als Fehler abgewiesen. Der Wegwerfschlüssel wurde anschließend gelöscht. Die GitHub-Ausführung und der echte Google-Upload stehen noch aus.
+Lokal am 05.11.2026 bestanden: 36 JVM-Tests, 10 Gerätetests auf einem separaten Emulatorprofil, 9 Python-Tests des Upload-Ablaufs, Android Lint ohne Fehler und Actionlint ohne Befund. Ein Build mit einem Wegwerfschlüssel wurde erfolgreich signiert und mit `jarsigner` verifiziert. Fehlender Upload-Schlüssel und ungültiger Versionscode wurden als Fehler abgewiesen. Der Wegwerfschlüssel wurde anschließend gelöscht. Der GitHub-Prüfworkflow wurde anschließend erfolgreich ausgeführt. Die Google-Cloud-Anbindung ist eingerichtet; der erste Play-Console-Upload steht noch aus.
+
+## Erstes Bundle
+
+Da bisher kein APK/AAB in Play Console hochgeladen wurde, wird `com.octopotato.vorleser` als gewünschter Paketname für die erste Veröffentlichung verwendet. Das Kotlin-Package und der Android-Namespace bleiben `de.vorleser`; sie müssen nicht mit der öffentlichen Application-ID identisch sein. Bereits installierte Testversionen mit `de.vorleser.app` sind eine andere App und werden dadurch nicht aktualisiert.
+
+Der erste lokale Release verwendet `versionCode=1` und `versionName=1.0.0`. Nachfolgende GitHub-Läufe starten mit ihrer konfigurierten Basis oberhalb dieser Version. Der dafür erstellte langlebige Upload-Keystore liegt außerhalb des Repositorys mit auf den Benutzer beschränkten Dateirechten; seine Werte werden ausschließlich als Secrets der GitHub-Umgebung `play-internal` verwendet. Eine zusätzliche sichere Sicherung von Keystore und Passwortdatei muss der Eigentümer aufbewahren.

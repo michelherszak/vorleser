@@ -42,7 +42,7 @@ android {
     namespace = "de.vorleser"
     compileSdk = 36
     defaultConfig {
-        applicationId = "de.vorleser.app"
+        applicationId = "com.octopotato.vorleser"
         minSdk = 26
         targetSdk = 36
         versionCode = releaseVersionCode
