@@ -6,3 +6,9 @@ build/
 .gradle/
 .kotlin/
 .idea/
+
+# Temporary Google authentication and signing material
+gha-creds-*.json
+*.p12
+*.pfx
+__pycache__/

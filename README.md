@@ -33,7 +33,7 @@ Die App zeigt die aktive Android-Kamera an und kann zwischen allen von CameraX a
 
 ## Bauen und prüfen
 
-Android SDK 35 und ein für den Gradle-Wrapper geeignetes JDK werden benötigt. Android Studios Java-Laufzeit kann über `JAVA_HOME` ausgewählt werden; die Gradle-Daemon-Konfiguration liegt unter `gradle/gradle-daemon-jvm.properties`.
+Android SDK 36 und ein für den Gradle-Wrapper geeignetes JDK werden benötigt. Android Studios Java-Laufzeit kann über `JAVA_HOME` ausgewählt werden; die Gradle-Daemon-Konfiguration liegt unter `gradle/gradle-daemon-jvm.properties`.
 
 ```sh
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
@@ -45,3 +45,7 @@ Der zweite Aufruf benötigt ein Android-Testgerät oder einen gestarteten Emulat
 Die Debug-APK liegt unter `app/build/outputs/apk/debug/app-debug.apk`.
 
 Für eine signierte Release-Version `keystore.properties` mit `storeFile`, `storePassword`, `keyAlias`, `keyPassword` lokal anlegen und `./gradlew :app:bundleRelease` ausführen. Schlüsseldateien und API-Schlüssel gehören nicht ins Repository.
+
+## GitHub und Google Play
+
+[Einrichtung und Bedienung der Veröffentlichung](Docs/Delivery/google-play.md): GitHub Actions prüft Pull Requests und baut auf manuellen Start ein signiertes App Bundle für den internen Testkanal. Die Erstkonfiguration benötigt einen Upload-Keystore sowie ein Google-Dienstkonto mit OIDC-Anbindung. Eine öffentliche Veröffentlichung wird durch diese Workflows nicht ausgelöst.
